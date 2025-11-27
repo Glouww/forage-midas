@@ -20,6 +20,9 @@ public class TransactionRecord {
     @Column(nullable = false)
     private float amount;
 
+    @Column(nullable = false)
+    private float incentive;
+
     protected TransactionRecord() {
     }
 
@@ -27,6 +30,14 @@ public class TransactionRecord {
         this.sender = sender;
         this.recipient = recipient;
         this.amount = amount;
+        this.incentive = 0.0f; // Default to 0 if no incentive provided
+    }
+
+    public TransactionRecord(UserRecord sender, UserRecord recipient, float amount, float incentive) {
+        this.sender = sender;
+        this.recipient = recipient;
+        this.amount = amount;
+        this.incentive = incentive;
     }
 
     public Long getId() {
@@ -61,12 +72,20 @@ public class TransactionRecord {
         this.amount = amount;
     }
 
+    public float getIncentive() {
+        return incentive;
+    }
+
+    public void setIncentive(float incentive) {
+        this.incentive = incentive;
+    }
+
     @Override
     public String toString() {
         String senderName = sender != null ? sender.getName() : "Unknown";
         String recipientName = recipient != null ? recipient.getName() : "Unknown";
-        return String.format("TransactionRecord[id=%d, sender='%s' (id=%d), recipient='%s' (id=%d), amount=%.2f]",
+        return String.format("TransactionRecord[id=%d, sender='%s' (id=%d), recipient='%s' (id=%d), amount=%.2f, incentive=%.2f]",
                 id, senderName, sender != null ? sender.getId() : -1,
-                recipientName, recipient != null ? recipient.getId() : -1, amount);
+                recipientName, recipient != null ? recipient.getId() : -1, amount, incentive);
     }
 }

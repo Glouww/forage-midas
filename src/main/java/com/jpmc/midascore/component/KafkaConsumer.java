@@ -2,6 +2,7 @@ package com.jpmc.midascore.component;
 
 import com.jpmc.midascore.entity.TransactionRecord;
 import com.jpmc.midascore.entity.UserRecord;
+import com.jpmc.midascore.foundation.Incentive;
 import com.jpmc.midascore.foundation.Transaction;
 import com.jpmc.midascore.repository.TransactionRecordRepository;
 import com.jpmc.midascore.repository.UserRepository;
@@ -9,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
 
 @Component
 public class KafkaConsumer {
@@ -17,10 +19,12 @@ public class KafkaConsumer {
     
     private final UserRepository userRepository;
     private final TransactionRecordRepository transactionRecordRepository;
+    private final RestTemplate restTemplate;
 
     public KafkaConsumer(UserRepository userRepository, TransactionRecordRepository transactionRecordRepository) {
         this.userRepository = userRepository;
         this.transactionRecordRepository = transactionRecordRepository;
+        this.restTemplate = new RestTemplate();
     }
 
     @KafkaListener(topics = "${general.kafka-topic}", groupId = "my-group")
@@ -39,24 +43,29 @@ public class KafkaConsumer {
             return;
         }
         
-        // Create and save transaction record
-        TransactionRecord transactionRecord = new TransactionRecord(sender, recipient, transaction.getAmount());
+        // Get incentive from API
+        float incentiveAmount = getIncentiveAmount(transaction);
+        logger.info("Incentive amount received: ${}", String.format("%.2f", incentiveAmount));
+        
+        // Create and save transaction record with incentive
+        TransactionRecord transactionRecord = new TransactionRecord(sender, recipient, transaction.getAmount(), incentiveAmount);
         transactionRecordRepository.save(transactionRecord);
         
-        // Update balances
+        // Update balances (incentive is added to recipient, not deducted from sender)
         float oldSenderBalance = sender.getBalance();
         float oldRecipientBalance = recipient.getBalance();
         sender.setBalance(oldSenderBalance - transaction.getAmount());
-        recipient.setBalance(oldRecipientBalance + transaction.getAmount());
+        recipient.setBalance(oldRecipientBalance + transaction.getAmount() + incentiveAmount);
         
         // Save updated user balances
         userRepository.save(sender);
         userRepository.save(recipient);
         
-        logger.info("Transaction processed successfully: '{}' sent ${} to '{}' | Sender balance: ${} → ${} | Recipient balance: ${} → ${}", 
+        logger.info("Transaction processed successfully: '{}' sent ${} to '{}' (incentive: ${}) | Sender balance: ${} → ${} | Recipient balance: ${} → ${}", 
                    sender.getName(), 
                    amountStr,
                    recipient.getName(),
+                   String.format("%.2f", incentiveAmount),
                    String.format("%.2f", oldSenderBalance), 
                    String.format("%.2f", sender.getBalance()),
                    String.format("%.2f", oldRecipientBalance), 
@@ -103,6 +112,23 @@ public class KafkaConsumer {
             }
         }
         return null;
+    }
+
+    /**
+     * Calls the incentive API to get the incentive amount for a transaction.
+     * 
+     * @param transaction The transaction to get incentive for
+     * @return The incentive amount, or 0.0 if API call fails
+     */
+    private float getIncentiveAmount(Transaction transaction) {
+        try {
+            String url = "http://localhost:8080/incentive";
+            Incentive incentive = restTemplate.postForObject(url, transaction, Incentive.class);
+            return incentive != null ? incentive.getAmount() : 0.0f;
+        } catch (Exception e) {
+            logger.warn("Failed to get incentive from API: {}", e.getMessage());
+            return 0.0f; // Default to 0 if API call fails
+        }
     }
 }
 
